@@ -14,6 +14,7 @@ val ktorVersion = "3.5.0"
 
 dependencies {
     implementation(project(":sandbox-bwrap"))
+    implementation(project(":egress-proxy"))
 
     implementation("io.ktor:ktor-server-core-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-netty-jvm:$ktorVersion")

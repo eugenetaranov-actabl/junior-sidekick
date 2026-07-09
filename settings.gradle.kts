@@ -5,6 +5,7 @@ plugins {
 rootProject.name = "junior-sidekick"
 
 include("core")
+include("egress-proxy")
 include("sandbox-bwrap")
 include("sandbox-service")
 include("tools")

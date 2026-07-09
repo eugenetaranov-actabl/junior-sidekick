@@ -16,3 +16,35 @@ sandbox {
   gid = 65534
   allowed-source-prefixes = ["/data"]
 }
+
+# Credential-injecting egress proxy. When enabled, the service starts a local MITM proxy, points the
+# sandbox at it (HTTPS_PROXY + CA trust env, CA cert mounted read-only), and injects auth headers for
+# the configured hosts. Credential values live only in this process and never enter the sandbox.
+egress {
+  enabled = false
+  listen-address = "127.0.0.1"
+  port = 0                       # 0 = OS-assigned ephemeral port
+  state-dir = "data/egress"      # per-instance CA (ca.crt / ca.key) is generated/persisted here
+  default-action = deny          # deny | tunnel  (terminate requires an explicit rule)
+
+  # Hard enforcement. When true the service installs an nftables owner-match rule so the sandbox uid
+  # (sandbox.uid) can reach ONLY the proxy, and runs bwrap without a user namespace so that uid is a
+  # real host uid. Requires Linux + CAP_NET_ADMIN + nft, and sandbox.uid set to a dedicated OS user.
+  # When false (or unsupported), the proxy still isolates the token but a command could bypass it.
+  enforce = false
+  # proxy-uid = 1000             # uid the proxy runs as; omit to auto-detect the current process uid
+
+  # Static tokens. Prefer env-var substitution so secrets stay out of the file.
+  credentials = [
+    { ref = jira-token,   value = ${?JIRA_TOKEN} }
+    { ref = github-token, value = ${?GITHUB_TOKEN} }
+  ]
+
+  rules = [
+    { id = jira, host = "*.atlassian.net", path-prefix = "/rest/", action = terminate,
+      credential-ref = jira-token, header = "Authorization", value-template = "Bearer {{token}}" }
+    { id = github, host = "api.github.com", action = terminate,
+      credential-ref = github-token, header = "Authorization", value-template = "token {{token}}" }
+    { id = npm, host = "registry.npmjs.org", action = tunnel }   # passthrough (may pin its cert)
+  ]
+}

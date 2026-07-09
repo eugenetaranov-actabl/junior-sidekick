@@ -115,6 +115,100 @@ class BwrapSandboxTest {
         assertTrue("--unshare-net" !in result.output.lines(), result.output)
     }
 
+    @Test
+    fun `execute injects allowlisted env vars as setenv`() {
+        // Arrange
+        val temp = Files.createTempDirectory("bwrap-sandbox-test")
+        val fakeBwrap = fakeBwrap(temp, "printf '%s\\n' \"\$@\"")
+        val rootfs = Files.createDirectory(temp.resolve("rootfs"))
+        val sandbox =
+            BwrapSandbox(
+                BwrapSandboxConfig(bwrapPath = fakeBwrap.pathString, rootfs = rootfs, maxOutputBytes = 10_000, uid = 1, gid = 1),
+            )
+
+        // Act
+        val result =
+            sandbox.execute(
+                BwrapSandboxRequest(
+                    command = "pwd",
+                    workdir = "/",
+                    timeoutSeconds = 5,
+                    networkEnabled = true,
+                    mounts = emptyList(),
+                    env = mapOf("HTTPS_PROXY" to "http://127.0.0.1:8888", "CURL_CA_BUNDLE" to "/etc/sidekick/egress-ca.crt"),
+                ),
+            )
+
+        // Assert
+        val lines = result.output.lines()
+        assertTrue(lines.contains("HTTPS_PROXY"), result.output)
+        assertTrue(lines.contains("http://127.0.0.1:8888"), result.output)
+        assertTrue(lines.contains("CURL_CA_BUNDLE"), result.output)
+        assertTrue(lines.contains("/etc/sidekick/egress-ca.crt"), result.output)
+    }
+
+    @Test
+    fun `execute rejects env vars outside the allowlist`() {
+        // Arrange
+        val temp = Files.createTempDirectory("bwrap-sandbox-test")
+        val fakeBwrap = fakeBwrap(temp, "printf 'x'")
+        val rootfs = Files.createDirectory(temp.resolve("rootfs"))
+        val sandbox =
+            BwrapSandbox(
+                BwrapSandboxConfig(bwrapPath = fakeBwrap.pathString, rootfs = rootfs, maxOutputBytes = 10_000, uid = 1, gid = 1),
+            )
+
+        // Act + Assert: a secret-bearing var must never be settable in the sandbox.
+        kotlin.test.assertFailsWith<IllegalArgumentException> {
+            sandbox.execute(
+                BwrapSandboxRequest(
+                    command = "pwd",
+                    workdir = "/",
+                    timeoutSeconds = 5,
+                    networkEnabled = true,
+                    mounts = emptyList(),
+                    env = mapOf("AWS_SECRET_ACCESS_KEY" to "leaked"),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `execute omits user namespace when unshareUser is false`() {
+        // Arrange: nftables owner-match needs a real host uid, so the user namespace must be dropped.
+        val temp = Files.createTempDirectory("bwrap-sandbox-test")
+        val fakeBwrap = fakeBwrap(temp, "printf '%s\\n' \"\$@\"")
+        val rootfs = Files.createDirectory(temp.resolve("rootfs"))
+        val sandbox =
+            BwrapSandbox(
+                BwrapSandboxConfig(
+                    bwrapPath = fakeBwrap.pathString,
+                    rootfs = rootfs,
+                    maxOutputBytes = 10_000,
+                    uid = 6000,
+                    gid = 6000,
+                    unshareUser = false,
+                ),
+            )
+
+        // Act
+        val result =
+            sandbox.execute(
+                BwrapSandboxRequest(
+                    command = "pwd",
+                    workdir = "/",
+                    timeoutSeconds = 5,
+                    networkEnabled = true,
+                    mounts = emptyList(),
+                ),
+            )
+
+        // Assert
+        val lines = result.output.lines()
+        assertTrue("--unshare-user" !in lines, result.output)
+        assertTrue(lines.contains("6000"), result.output)
+    }
+
     private fun fakeBwrap(
         directory: java.nio.file.Path,
         body: String,

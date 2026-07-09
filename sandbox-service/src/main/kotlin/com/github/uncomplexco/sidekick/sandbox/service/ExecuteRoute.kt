@@ -24,6 +24,7 @@ fun Application.executeRoute(
     token: String,
     mountSourcePolicy: MountSourcePolicy,
     executor: SandboxCommandExecutor,
+    augmentRequest: (BwrapSandboxRequest) -> BwrapSandboxRequest = { it },
 ) {
     val logger = log
     routing {
@@ -36,7 +37,7 @@ fun Application.executeRoute(
             val request = call.receive<ExecuteRequest>()
             val sandboxRequest =
                 try {
-                    request.toSandboxRequest(mountSourcePolicy)
+                    augmentRequest(request.toSandboxRequest(mountSourcePolicy))
                 } catch (error: IllegalArgumentException) {
                     call.respond(HttpStatusCode.BadRequest, ErrorResponse(error.message ?: "Invalid execute request"))
                     return@post

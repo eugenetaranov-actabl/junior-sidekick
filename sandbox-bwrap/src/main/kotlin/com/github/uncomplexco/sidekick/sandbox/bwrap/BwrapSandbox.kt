@@ -18,7 +18,8 @@ class BwrapSandbox(
         val rootfs = safeDirectory(config.rootfs, "rootfs")
         val workdir = sandboxPath(request.workdir, "workdir")
         val mounts = request.mounts.map(::validatedMount)
-        val args = bwrapArgs(rootfs, workdir, request.networkEnabled, mounts, request.command)
+        val env = validatedEnv(request.env)
+        val args = bwrapArgs(rootfs, workdir, request.networkEnabled, mounts, env, request.command)
         val process = ProcessBuilder(args).redirectErrorStream(true).start()
 
         val output = LimitedOutput(config.maxOutputBytes)
@@ -45,6 +46,7 @@ class BwrapSandbox(
         workdir: String,
         networkEnabled: Boolean,
         mounts: List<BwrapMount>,
+        env: Map<String, String>,
         command: String,
     ): List<String> =
         buildList {
@@ -52,7 +54,9 @@ class BwrapSandbox(
             add("--die-with-parent")
             add("--new-session")
             add("--clearenv")
-            add("--unshare-user")
+            if (config.unshareUser) {
+                add("--unshare-user")
+            }
             add("--unshare-ipc")
             add("--unshare-pid")
             add("--unshare-uts")
@@ -113,10 +117,24 @@ class BwrapSandbox(
             add("--setenv")
             add("PATH")
             add("/usr/local/bin:/usr/bin:/bin")
+            for ((key, value) in env) {
+                add("--setenv")
+                add(key)
+                add(value)
+            }
             add("/bin/bash")
             add("-lc")
             add(command)
         }
+
+    private fun validatedEnv(env: Map<String, String>): Map<String, String> {
+        for (key in env.keys) {
+            require(key in ALLOWED_ENV_KEYS) {
+                "Environment variable '$key' is not permitted in the sandbox (proxy/CA-trust vars only)"
+            }
+        }
+        return env
+    }
 
     private fun validatedMount(mount: BwrapMount): BwrapMount =
         BwrapMount(
@@ -153,6 +171,20 @@ class BwrapSandbox(
         val normalized = path.toAbsolutePath().normalize()
         require(Files.exists(normalized, LinkOption.NOFOLLOW_LINKS)) { "Bash sandbox $label does not exist: $normalized" }
         return normalized.toRealPath(LinkOption.NOFOLLOW_LINKS)
+    }
+
+    companion object {
+        /**
+         * Environment variable names the sandbox is allowed to receive. Deliberately limited to proxy
+         * routing and CA-trust variables so a credential can never be smuggled in through [BwrapSandboxRequest.env].
+         */
+        val ALLOWED_ENV_KEYS =
+            setOf(
+                "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+                "http_proxy", "https_proxy", "no_proxy",
+                "CURL_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR",
+                "GIT_SSL_CAINFO", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "PIP_CERT",
+            )
     }
 }
 
