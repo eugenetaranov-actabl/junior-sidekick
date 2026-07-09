@@ -10,8 +10,13 @@ import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** The mount path the combined CA bundle (system CAs + our proxy CA) is exposed at inside the sandbox. */
-private const val CA_BUNDLE_SANDBOX_PATH = "/etc/sidekick/egress-ca-bundle.crt"
+/**
+ * Where the combined CA bundle (system CAs + our proxy CA) is mounted inside the sandbox. We bind it
+ * over the rootfs's existing Debian system-trust path: the file already exists (so bwrap can bind over
+ * it on the read-only root without creating a mountpoint) and tools trust it by default. Our bundle
+ * includes the original system CAs, so nothing is lost for tunneled hosts with real certs.
+ */
+private const val CA_BUNDLE_SANDBOX_PATH = "/etc/ssl/certs/ca-certificates.crt"
 
 /**
  * A started egress proxy plus the augmentor that stamps every sandbox request with the proxy env and
