@@ -13,7 +13,6 @@ java {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":sandbox-bwrap"))
 
     implementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.7"))
     api("com.slack.api:slack-api-client:1.49.0")

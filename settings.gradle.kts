@@ -5,7 +5,5 @@ plugins {
 rootProject.name = "junior-sidekick"
 
 include("core")
-include("sandbox-bwrap")
-include("sandbox-service")
 include("tools")
 include("app")
